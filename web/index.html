@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>findme — find yourself in the pile</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <!-- ===================== START ===================== -->
+    <main id="view-start" class="view is-active">
+      <header class="hero">
+        <p class="eyebrow">Local · private · open</p>
+        <h1 class="hero-title">findme</h1>
+        <p class="hero-sub">
+          Point it at a folder of event photos. It finds every face, groups them into
+          people, and lets you pick yourself out — no cloud, nothing uploaded.
+        </p>
+      </header>
+
+      <section class="panel">
+        <label class="field-label">Photo folder</label>
+        <button id="pick-btn" class="picker" type="button">
+          <span id="pick-label" class="picker-label is-empty">Choose a folder…</span>
+          <span class="picker-action">Browse</span>
+        </button>
+        <p id="pick-count" class="hint">Every subfolder is scanned too.</p>
+        <div class="row row-end">
+          <button id="scan-btn" class="btn btn-primary" disabled>Find faces</button>
+        </div>
+        <p id="start-error" class="error-text" hidden></p>
+
+        <div class="soon">
+          <span class="chip chip-ghost">Google Drive folder</span>
+          <span class="soon-label">coming soon</span>
+        </div>
+      </section>
+
+      <section id="recent" class="recent" hidden>
+        <h2 class="section-head">Recent scans</h2>
+        <div id="recent-list" class="recent-list"></div>
+      </section>
+    </main>
+
+    <!-- ===================== PROGRESS ===================== -->
+    <main id="view-progress" class="view">
+      <div class="progress-wrap">
+        <h2 class="progress-title">Looking through your photos…</h2>
+        <p id="progress-msg" class="progress-msg">Warming up the model…</p>
+        <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+        <p id="progress-count" class="progress-count">0 / 0 photos</p>
+        <p id="progress-faces" class="progress-faces"></p>
+      </div>
+    </main>
+
+    <!-- ===================== RESULTS ===================== -->
+    <main id="view-results" class="view">
+      <header class="results-head">
+        <div>
+          <h2 id="results-title" class="results-title">People</h2>
+          <p id="results-sub" class="results-sub"></p>
+        </div>
+        <div class="results-actions">
+          <button id="selfie-btn" class="btn btn-primary">Find me with a selfie</button>
+          <button id="export-btn" class="btn btn-ghost">Export</button>
+          <button id="refine-btn" class="btn btn-ghost">Refine</button>
+          <button id="reset-btn" class="btn btn-ghost">New scan</button>
+        </div>
+      </header>
+
+      <div id="match-banner" class="match-banner" hidden>
+        <div class="match-banner-inner">
+          <img id="match-face" class="match-face" alt="" />
+          <div>
+            <p class="match-lead">Most likely you</p>
+            <p id="match-detail" class="match-detail"></p>
+          </div>
+          <button id="match-open" class="btn btn-primary btn-sm">See these photos</button>
+          <button id="match-clear" class="btn btn-ghost btn-sm">Clear</button>
+        </div>
+      </div>
+
+      <!-- Refine panel -->
+      <div id="refine-panel" class="refine" hidden>
+        <div class="refine-grid">
+          <div class="refine-ctl">
+            <label class="refine-label">Grouping <span id="v-group" class="refine-val"></span></label>
+            <input id="s-group" class="slider" type="range" min="0" max="100" value="50" />
+            <div class="refine-ends"><span>More people</span><span>Fewer people</span></div>
+          </div>
+          <div class="refine-ctl">
+            <label class="refine-label">Face quality <span id="v-qual" class="refine-val"></span></label>
+            <input id="s-qual" class="slider" type="range" min="0" max="100" value="50" />
+            <div class="refine-ends"><span>Include all</span><span>Only clear faces</span></div>
+          </div>
+          <div class="refine-ctl refine-apply">
+            <button id="regroup-btn" class="btn btn-primary btn-sm">Re-group</button>
+            <span id="regroup-note" class="hint"></span>
+          </div>
+        </div>
+        <div class="refine-audit">
+          <button id="report-btn" class="btn btn-ghost btn-sm">Open audit report</button>
+          <button id="metrics-btn" class="btn btn-ghost btn-sm">Download metrics.json</button>
+          <span class="hint">metrics.json is numbers only (no photos) — safe to share for tuning.</span>
+        </div>
+      </div>
+
+      <!-- Display filter -->
+      <div class="filterbar">
+        <label class="filter-label">Show people in at least <b id="v-min">1</b> photo<span id="v-min-s"></span></label>
+        <input id="s-min" class="slider" type="range" min="1" max="50" value="1" />
+        <span id="filter-count" class="hint"></span>
+      </div>
+
+      <div id="people-grid" class="people-grid"></div>
+
+      <!-- Unsorted -->
+      <section id="unsorted-sec" class="unsorted" hidden>
+        <button id="unsorted-toggle" class="unsorted-head">
+          <span><b id="unsorted-n">0</b> unsorted faces</span>
+          <span class="hint">blurry, side-on or tiny — we couldn't confidently place them · <span id="unsorted-caret">show</span></span>
+        </button>
+        <div id="unsorted-grid" class="people-grid" hidden></div>
+      </section>
+
+      <input id="selfie-input" type="file" accept="image/*" hidden />
+    </main>
+
+    <!-- ===================== FOLDER PICKER ===================== -->
+    <div id="folder-sheet" class="sheet" hidden>
+      <div class="sheet-scrim" data-close="folder"></div>
+      <div class="sheet-panel folder-panel" role="dialog" aria-modal="true">
+        <header class="sheet-head">
+          <div class="sheet-headings">
+            <h3 class="sheet-title">Choose a folder</h3>
+            <p id="folder-path" class="sheet-sub"></p>
+          </div>
+          <button class="icon-btn" data-close="folder" aria-label="Close">✕</button>
+        </header>
+        <div id="folder-list" class="folder-list"></div>
+        <footer class="folder-foot">
+          <span id="folder-count" class="hint"></span>
+          <button id="folder-select" class="btn btn-primary btn-sm">Scan this folder</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ===================== CLUSTER SHEET ===================== -->
+    <div id="cluster-sheet" class="sheet" hidden>
+      <div class="sheet-scrim" data-close="sheet"></div>
+      <div class="sheet-panel" role="dialog" aria-modal="true">
+        <header class="sheet-head">
+          <img id="sheet-face" class="sheet-face" alt="" />
+          <div class="sheet-headings">
+            <div class="name-row">
+              <input id="sheet-name" class="name-input" placeholder="Name this person…" autocomplete="off" />
+              <button id="sheet-name-save" class="btn btn-primary btn-sm">Save</button>
+            </div>
+            <p id="sheet-sub" class="sheet-sub"></p>
+          </div>
+          <button class="icon-btn" data-close="sheet" aria-label="Close">✕</button>
+        </header>
+        <div id="sheet-grid" class="photo-grid"></div>
+      </div>
+    </div>
+
+    <!-- ===================== EXPORT ===================== -->
+    <div id="export-sheet" class="sheet" hidden>
+      <div class="sheet-scrim" data-close="export"></div>
+      <div class="sheet-panel folder-panel" role="dialog" aria-modal="true">
+        <header class="sheet-head">
+          <div class="sheet-headings">
+            <h3 class="sheet-title">Export photos into folders</h3>
+            <p class="sheet-sub">One folder per person, named after them. Photos are copied, never moved.</p>
+          </div>
+          <button class="icon-btn" data-close="export" aria-label="Close">✕</button>
+        </header>
+        <div class="export-body">
+          <label class="field-label">Destination folder</label>
+          <button id="export-dest-btn" class="picker" type="button">
+            <span id="export-dest-label" class="picker-label is-empty">Choose a destination…</span>
+            <span class="picker-action">Choose</span>
+          </button>
+
+          <label class="field-label" style="margin-top: 20px">Who to export</label>
+          <div class="seg">
+            <button class="seg-btn is-on" data-scope="named" type="button">Named people only</button>
+            <button class="seg-btn" data-scope="all" type="button">All people shown</button>
+          </div>
+          <p id="export-scope-hint" class="hint"></p>
+        </div>
+        <footer class="folder-foot">
+          <span id="export-status" class="hint"></span>
+          <button id="export-run" class="btn btn-primary btn-sm" disabled>Export</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ===================== LIGHTBOX ===================== -->
+    <div id="lightbox" class="lightbox" hidden>
+      <div class="sheet-scrim" data-close="lightbox"></div>
+      <div class="lightbox-inner">
+        <img id="lightbox-img" class="lightbox-img" alt="" />
+        <div class="lightbox-bar">
+          <span id="lightbox-name" class="lightbox-name"></span>
+          <a id="lightbox-download" class="btn btn-primary btn-sm" download>Download</a>
+          <button class="btn btn-ghost btn-sm" data-close="lightbox">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

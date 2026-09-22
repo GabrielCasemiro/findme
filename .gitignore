@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# uv
+.uv/
+
+# App data — generated face crops, thumbnails, embeddings, job metadata
+data/
+
+# OS
+.DS_Store
