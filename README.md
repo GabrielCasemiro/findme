@@ -8,6 +8,25 @@ a marathon, a party with a thousand shots — and it detects every face, groups 
 Everything runs **locally on your machine**. No cloud, no account, nothing uploaded. Your
 photos never leave your computer, and no face data is ever stored anywhere but your own disk.
 
+## For photographers — the Windows app (no setup)
+
+If you just want to use findme (not develop it), you don't need Python or a terminal:
+
+1. Download **`findme-windows.zip`** from the [Releases page](../../releases) (built
+   automatically by GitHub Actions).
+2. Unzip it and **double-click `findme.exe`**. A small window opens and your browser launches
+   automatically. *(The very first launch can take up to a minute while Windows scans the app;
+   after that it's fast.)*
+3. Click **Browse**, pick your event's photo folder, and **Find faces**.
+4. **Name** the people you care about, then **Export** → it creates one folder per person
+   (named after them) that you can upload to Drive to share.
+
+Everything runs on your own PC — no cloud, no account, nothing uploaded.
+
+> Building the app yourself: run the **build-windows** workflow from the Actions tab (or push a
+> `v*` tag). It bundles Python, the face model, and the UI into the `.exe` — see
+> `.github/workflows/build-windows.yml` and `findme.spec`.
+
 ## Screenshots
 
 Point it at a folder — nothing is uploaded.

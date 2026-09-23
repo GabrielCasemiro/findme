@@ -12,6 +12,8 @@ import io
 import os
 import re
 import shutil
+import subprocess
+import sys
 import threading
 import uuid
 from contextlib import asynccontextmanager
@@ -26,7 +28,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel
 
 from .cluster import apply_names, cluster_centroids, rank_clusters_by_selfie, recluster
-from .config import BASE_DIR, DATA_DIR
+from .config import DATA_DIR, WEB_DIR
 from .engine import IMAGE_EXTS, embed_primary_face
 from .pipeline import run_scan
 from .store import Job, store
@@ -37,7 +39,6 @@ COUNT_CAP = 50000  # stop counting images past this — keeps huge trees respons
 _scan_lock = threading.Lock()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-WEB_DIR = BASE_DIR / "web"
 
 
 @asynccontextmanager
@@ -252,6 +253,28 @@ def export_folders(job_id: str, req: ExportRequest) -> dict:
                 except OSError:
                     continue
     return {"dest": str(dest), "people": people, "files": files}
+
+
+class RevealRequest(BaseModel):
+    path: str
+
+
+@app.post("/api/reveal")
+def reveal(req: RevealRequest) -> dict:
+    """Open a folder in the OS file manager (Explorer/Finder). Local desktop only."""
+    p = Path(req.path).expanduser()
+    if not p.exists():
+        raise HTTPException(404, "That folder no longer exists.")
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(p))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(p)])
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+    except Exception as e:
+        raise HTTPException(500, f"Could not open the folder: {e}")
+    return {"ok": True}
 
 
 @app.get("/api/jobs/{job_id}/unsorted")

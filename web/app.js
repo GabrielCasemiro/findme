@@ -483,6 +483,7 @@ function openExport() {
   }
   $("#export-run").disabled = !state.exportDest;
   $("#export-status").textContent = "";
+  $("#export-open").hidden = true;
   updateExportHint();
   $("#export-sheet").hidden = false;
 }
@@ -526,11 +527,26 @@ $("#export-run").addEventListener("click", async () => {
       body: JSON.stringify(body),
     });
     $("#export-status").textContent = `✓ ${r.people} folders · ${r.files} photos → ${r.dest}`;
+    state.lastExportDest = r.dest;
+    $("#export-open").hidden = false;
   } catch (e) {
     $("#export-status").textContent = e.message;
   } finally {
     btn.disabled = false;
     btn.textContent = "Export";
+  }
+});
+
+$("#export-open").addEventListener("click", async () => {
+  if (!state.lastExportDest) return;
+  try {
+    await api("/api/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: state.lastExportDest }),
+    });
+  } catch (e) {
+    alert(e.message);
   }
 });
 
