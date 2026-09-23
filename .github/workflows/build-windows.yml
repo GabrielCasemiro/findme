@@ -7,6 +7,10 @@ on:
   push:
     tags: ["v*"]
 
+# Needed so the tagged build can create/attach a GitHub Release.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
