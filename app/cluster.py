@@ -67,9 +67,10 @@ def recluster(
     }
 
     faces = job.faces
-    ids = np.array(sorted(faces))
+    # faces the user took out of a person stay out of every re-group
+    ids = np.array(sorted(f for f in faces if f not in job.removed))
     if len(ids) == 0:
-        job.clusters, job.unsorted, job.num_clusters = {}, [], 0
+        job.clusters, job.unsorted, job.num_clusters = {}, sorted(job.removed), 0
         return
 
     E = job.embeddings[ids]  # row k ↔ face id ids[k]
@@ -123,37 +124,39 @@ def recluster(
                 else:
                     unsorted_k.append(int(k))
 
-    # materialize clusters, numbered by photo count (most photographed person first)
     final: dict[int, list[int]] = {}
     for k, lab in assign.items():
         final.setdefault(lab, []).append(int(ids[k]))
 
-    ordered = sorted(final.values(), key=lambda fs: len({faces[f].photo_id for f in fs}), reverse=True)
+    job.unsorted = [int(ids[k]) for k in unsorted_k] + sorted(job.removed)
+    for f in job.unsorted:
+        faces[f].cluster_id = -1
+    set_clusters(job, list(final.values()))
+    apply_names(job)
+
+
+def set_clusters(job: Job, groups: list[list[int]]) -> None:
+    """Rebuild job.clusters from groups of face ids, numbered by photo count (most
+    photographed person first). Empty groups are dropped."""
+    faces = job.faces
+    ordered = sorted(
+        (g for g in groups if g), key=lambda fs: len({faces[f].photo_id for f in fs}), reverse=True
+    )
     job.clusters = {}
     for new_id, members in enumerate(ordered):
-        members.sort(key=lambda f: faces[f].det_score, reverse=True)
+        members = sorted(members, key=lambda f: faces[f].det_score, reverse=True)
         for f in members:
             faces[f].cluster_id = new_id
         photo_ids = sorted({faces[f].photo_id for f in members})
         job.clusters[new_id] = ClusterRec(
             id=new_id, face_ids=members, photo_ids=photo_ids, rep_face_id=members[0]
         )
-
-    job.unsorted = [int(ids[k]) for k in unsorted_k]
-    for f in job.unsorted:
-        faces[f].cluster_id = -1
     job.num_clusters = len(job.clusters)
-    apply_names(job)
 
 
-def apply_names(job: Job) -> None:
-    """Re-derive each cluster's name from job.names (face_id → name).
-
-    Names are anchored to faces, not cluster ids, so they follow a person across a
-    re-group. A cluster takes the name of its representative (or any named member)."""
-    if not job.names:
-        return
+def _name_clusters(job: Job) -> None:
     for cluster in job.clusters.values():
+        cluster.name = ""
         if cluster.rep_face_id in job.names:
             cluster.name = job.names[cluster.rep_face_id]
             continue
@@ -161,6 +164,36 @@ def apply_names(job: Job) -> None:
             if f in job.names:
                 cluster.name = job.names[f]
                 break
+
+
+def apply_names(job: Job) -> None:
+    """Re-derive each cluster's name from job.names (face_id → name), then fuse
+    clusters that share a name into one person.
+
+    Names are anchored to faces, not cluster ids, so they follow a person across a
+    re-group. A cluster takes the name of its representative (or any named member).
+    Giving two groups the same name is how the user says "these are the same person"
+    (e.g. one group of front shots, one of profiles) — and since it's derived from the
+    anchored names, the merge survives a re-group too."""
+    if not job.names:
+        for cluster in job.clusters.values():
+            cluster.name = ""
+        return
+    _name_clusters(job)
+
+    by_name: dict[str, list[int]] = {}
+    for cid, cluster in job.clusters.items():
+        if cluster.name:
+            by_name.setdefault(cluster.name.strip().casefold(), []).append(cid)
+    if all(len(cids) == 1 for cids in by_name.values()):
+        return
+    merged = [cid for cids in by_name.values() for cid in cids[1:]]
+    groups = {cid: list(c.face_ids) for cid, c in job.clusters.items() if cid not in merged}
+    for cids in by_name.values():
+        for cid in cids[1:]:
+            groups[cids[0]].extend(job.clusters[cid].face_ids)
+    set_clusters(job, list(groups.values()))
+    _name_clusters(job)
 
 
 # Back-compat name used by the scan pipeline.

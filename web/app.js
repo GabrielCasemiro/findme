@@ -15,6 +15,8 @@ const state = {
   pickPath: null,      // folder chosen in the picker
   browsePath: null,    // folder currently shown in the browser sheet
   countReq: 0,         // guards against out-of-order async image counts
+  selecting: false,    // person sheet is in "select photos to remove" mode
+  selected: new Set(), // photo ids picked in select mode
 };
 
 /* ------------------------------ views ---------------------------------- */
@@ -438,20 +440,95 @@ async function saveName() {
   const btn = $("#sheet-name-save");
   btn.disabled = true;
   try {
-    await api(`/api/jobs/${state.jobId}/clusters/${cid}/name`, {
+    const r = await api(`/api/jobs/${state.jobId}/clusters/${cid}/name`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    const c = state.clusters.find((x) => x.cluster_id === cid);
-    if (c) c.name = name;
-    renderPeople();
+    // naming can merge groups (same name = same person), which renumbers everyone
+    await refreshClusters();
+    if (r.merged) {
+      await openCluster(r.cluster_id);
+      $("#sheet-sub").textContent +=
+        ` · merged ${r.merged} other group${r.merged === 1 ? "" : "s"} named “${name}”`;
+    } else {
+      state.currentCluster = r.cluster_id;
+    }
     btn.textContent = "Saved";
     setTimeout(() => (btn.textContent = "Save"), 1200);
   } catch (e) {
     alert(e.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+// Reload the people list without resetting the photo-count filter.
+async function refreshClusters() {
+  const minP = $("#s-min").value;
+  const data = await api(`/api/jobs/${state.jobId}/clusters`);
+  state.clusters = data.clusters;
+  state.numUnsorted = data.num_unsorted || 0;
+  $("#results-title").textContent = `${state.clusters.length} people`;
+  $("#s-min").value = minP;
+  renderPeople();
+  setupUnsorted();
+}
+
+/* ------------------------------ remove photos -------------------------- */
+// Select mode in the person sheet: tap the photos that aren't this person and
+// take them out (their face goes to unsorted and stays out of re-groups).
+$("#sheet-select").addEventListener("click", () => setSelecting(!state.selecting));
+$("#select-all").addEventListener("click", () => {
+  const cells = [...document.querySelectorAll("#sheet-grid .photo")];
+  const all = state.selected.size === cells.length;
+  state.selected.clear();
+  for (const cell of cells) {
+    cell.classList.toggle("is-selected", !all);
+    if (!all) state.selected.add(Number(cell.dataset.photo));
+  }
+  syncSelectBar();
+});
+$("#select-remove").addEventListener("click", removeSelected);
+
+function setSelecting(on) {
+  state.selecting = on;
+  state.selected = new Set();
+  $("#sheet-select").textContent = on ? "Done" : "Select";
+  $("#select-bar").hidden = !on;
+  $("#sheet-grid").classList.toggle("is-selecting", on);
+  document.querySelectorAll("#sheet-grid .photo").forEach((c) => c.classList.remove("is-selected"));
+  syncSelectBar();
+}
+
+function syncSelectBar() {
+  const n = state.selected.size;
+  $("#select-count").textContent = n
+    ? `${n} photo${n === 1 ? "" : "s"} selected`
+    : "Tap the photos that aren't this person";
+  $("#select-remove").disabled = n === 0;
+  const total = document.querySelectorAll("#sheet-grid .photo").length;
+  $("#select-all").textContent = n && n === total ? "Select none" : "Select all";
+}
+
+async function removeSelected() {
+  const btn = $("#select-remove");
+  btn.disabled = true;
+  btn.textContent = "Removing…";
+  try {
+    const r = await api(`/api/jobs/${state.jobId}/clusters/${state.currentCluster}/remove`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photo_ids: [...state.selected] }),
+    });
+    await refreshClusters();
+    if (r.cluster_id == null) $("#cluster-sheet").hidden = true;
+    else await openCluster(r.cluster_id);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.textContent = "Remove from this person";
+    syncSelectBar();
   }
 }
 
@@ -560,20 +637,29 @@ async function openCluster(clusterId) {
   state.currentCluster = clusterId;
   $("#sheet-face").src = c.rep_face_url;
   $("#sheet-name").value = c.name || "";
-  $("#sheet-sub").textContent = `${c.photo_count} photo${c.photo_count === 1 ? "" : "s"}`;
+  $("#sheet-sub").textContent =
+    `${c.photo_count} photo${c.photo_count === 1 ? "" : "s"} · give two groups the same name to merge them`;
 
   const grid = $("#sheet-grid");
   grid.innerHTML = "";
   for (const p of c.photos) {
     const cell = document.createElement("div");
     cell.className = "photo";
+    cell.dataset.photo = p.photo_id;
     const boxes = p.boxes
       .map((b) => `<div class="face-box" style="left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%"></div>`)
       .join("");
     cell.innerHTML = `<img src="${p.thumb_url}" alt="${p.name}" loading="lazy" />${boxes}`;
-    cell.addEventListener("click", () => openLightbox(p));
+    cell.addEventListener("click", () => {
+      if (!state.selecting) return openLightbox(p);
+      const on = cell.classList.toggle("is-selected");
+      if (on) state.selected.add(p.photo_id);
+      else state.selected.delete(p.photo_id);
+      syncSelectBar();
+    });
     grid.appendChild(cell);
   }
+  setSelecting(false);
   $("#cluster-sheet").hidden = false;
 }
 

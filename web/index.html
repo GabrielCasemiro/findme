@@ -158,9 +158,15 @@
             </div>
             <p id="sheet-sub" class="sheet-sub"></p>
           </div>
+          <button id="sheet-select" class="btn btn-ghost btn-sm">Select</button>
           <button class="icon-btn" data-close="sheet" aria-label="Close">✕</button>
         </header>
         <div id="sheet-grid" class="photo-grid"></div>
+        <div id="select-bar" class="select-bar" hidden>
+          <span id="select-count" class="select-count">Tap the photos that aren't this person</span>
+          <button id="select-all" class="btn btn-ghost btn-sm">Select all</button>
+          <button id="select-remove" class="btn btn-danger btn-sm" disabled>Remove from this person</button>
+        </div>
       </div>
     </div>
 

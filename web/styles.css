@@ -804,6 +804,51 @@ body {
   pointer-events: none;
 }
 
+/* select mode: tap photos that aren't this person, then remove them */
+.btn-danger {
+  background: var(--danger);
+  color: var(--on-primary);
+}
+.photo-grid.is-selecting .photo::after {
+  content: "";
+  position: absolute;
+  top: var(--sm);
+  right: var(--sm);
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--on-primary);
+  background: rgba(0, 0, 0, 0.25);
+}
+.photo-grid.is-selecting .photo.is-selected::after {
+  content: "✓";
+  color: var(--on-primary);
+  background: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.photo.is-selected img {
+  opacity: 0.55;
+}
+.select-bar {
+  position: sticky;
+  bottom: calc(-1 * var(--xl));
+  display: flex;
+  align-items: center;
+  gap: var(--sm);
+  margin: var(--xl) calc(-1 * var(--xl)) calc(-1 * var(--xl));
+  padding: var(--base) var(--xl);
+  background: var(--canvas);
+  border-top: 1px solid var(--hairline);
+}
+.select-count {
+  flex: 1;
+  font-size: 15px;
+  color: var(--ink-80);
+}
+
 /* ------------------------------ lightbox --------------------------------- */
 .lightbox {
   align-items: center;

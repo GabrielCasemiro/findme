@@ -65,6 +65,7 @@ class Job:
     unsorted: list[int] = field(default_factory=list)  # face ids not confidently placed
     params: dict = field(default_factory=dict)  # clustering params last used
     names: dict[int, str] = field(default_factory=dict)  # face_id -> name (anchors names to faces)
+    removed: set[int] = field(default_factory=set)  # face ids the user took out of a person
     # not persisted to index.json (stored as .npy instead)
     embeddings: np.ndarray | None = field(default=None, repr=False)
 
@@ -102,6 +103,7 @@ class Job:
             "unsorted": self.unsorted,
             "params": self.params,
             "names": {str(k): v for k, v in self.names.items()},
+            "removed": sorted(self.removed),
             "photos": [asdict(p) for p in self.photos.values()],
             "faces": [asdict(f) for f in self.faces.values()],
             "clusters": [asdict(c) for c in self.clusters.values()],
@@ -135,6 +137,7 @@ class Job:
         job.unsorted = d.get("unsorted", [])
         job.params = d.get("params", {})
         job.names = {int(k): v for k, v in d.get("names", {}).items()}
+        job.removed = set(d.get("removed", []))
         job.photos = {p["id"]: PhotoRec(**p) for p in d.get("photos", [])}
         job.faces = {f["id"]: FaceRec(**f) for f in d.get("faces", [])}
         job.clusters = {c["id"]: ClusterRec(**c) for c in d.get("clusters", [])}

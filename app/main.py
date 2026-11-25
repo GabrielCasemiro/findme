@@ -27,7 +27,13 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 from pydantic import BaseModel
 
-from .cluster import apply_names, cluster_centroids, rank_clusters_by_selfie, recluster
+from .cluster import (
+    apply_names,
+    cluster_centroids,
+    rank_clusters_by_selfie,
+    recluster,
+    set_clusters,
+)
 from .config import DATA_DIR, WEB_DIR
 from .engine import IMAGE_EXTS, embed_primary_face
 from .pipeline import run_scan
@@ -179,19 +185,70 @@ class NameRequest(BaseModel):
 @app.post("/api/jobs/{job_id}/clusters/{cluster_id}/name")
 def set_name(job_id: str, cluster_id: int, req: NameRequest) -> dict:
     """Name a person. Anchored to the cluster's representative face so it survives a
-    re-group (the name follows that face into whatever cluster it lands in)."""
+    re-group (the name follows that face into whatever cluster it lands in). Reusing a
+    name another group already has merges the two into one person."""
     job = _job_or_404(job_id)
     cluster = job.clusters.get(cluster_id)
     if cluster is None:
         raise HTTPException(404, "Unknown cluster")
     name = req.name.strip()
+    before = job.num_clusters
+    # a merged person has several anchor faces; rename/clear them all together so the
+    # merge survives a re-group
+    old = cluster.name.strip().casefold()
+    anchors = {f for f, n in job.names.items() if old and n.strip().casefold() == old}
+    anchors |= {f for f in cluster.face_ids if f in job.names}
+    for fid in anchors:
+        if name:
+            job.names[fid] = name
+        else:
+            job.names.pop(fid)
     if name:
         job.names[cluster.rep_face_id] = name
-    else:
-        job.names.pop(cluster.rep_face_id, None)
-    cluster.name = name
+    apply_names(job)
     job.save()
-    return {"cluster_id": cluster_id, "name": name}
+    return {
+        "cluster_id": job.faces[cluster.rep_face_id].cluster_id,
+        "name": name,
+        "merged": before - job.num_clusters,
+    }
+
+
+class RemoveRequest(BaseModel):
+    photo_ids: list[int]
+
+
+@app.post("/api/jobs/{job_id}/clusters/{cluster_id}/remove")
+def remove_photos(job_id: str, cluster_id: int, req: RemoveRequest) -> dict:
+    """Take this person's face(s) in the given photos out of the person ("that's not
+    them"). The faces go to unsorted and stay out of future re-groups."""
+    job = _job_or_404(job_id)
+    cluster = job.clusters.get(cluster_id)
+    if cluster is None:
+        raise HTTPException(404, "Unknown cluster")
+    drop = set(req.photo_ids)
+    gone = [f for f in cluster.face_ids if job.faces[f].photo_id in drop]
+    keep = [f for f in cluster.face_ids if job.faces[f].photo_id not in drop]
+    if not gone:
+        raise HTTPException(422, "None of those photos belong to this person.")
+
+    # keep the person's name if its anchor face is among the removed ones
+    name = next((job.names.pop(f) for f in gone if f in job.names), "")
+    if name and keep and not any(f in job.names for f in keep):
+        job.names[keep[0]] = name
+
+    job.removed.update(gone)
+    job.unsorted.extend(gone)
+    for f in gone:
+        job.faces[f].cluster_id = -1
+    groups = [c.face_ids if c.id != cluster_id else keep for c in job.clusters.values()]
+    set_clusters(job, groups)
+    apply_names(job)
+    job.save()
+    return {
+        "cluster_id": job.faces[keep[0]].cluster_id if keep else None,
+        "removed_faces": len(gone),
+    }
 
 
 _SAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
